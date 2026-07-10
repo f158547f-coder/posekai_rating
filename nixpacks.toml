@@ -1,5 +1,8 @@
+[phases.install]
+cmds = ["npm install --prefer-offline"]
+
 [phases.build]
-cmds = ["npm ci", "npm run build"]
+cmds = ["npm run build"]
 
 [start]
 cmd = "node --loader tsx/esm server/index.ts"
