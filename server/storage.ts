@@ -96,29 +96,10 @@ export interface BigFish {
   tackle: string;
 }
 
-// Формула расчёта балла за выезд (место в турнирной таблице)
-// балл = (N - место + 1) / N * 10, где N = число участников на выезде с баллами
-function computeTripScores(tripId: number): Record<number, number> {
-  const rows = db.prepare(
-    `SELECT participant_id, weight, attended FROM results WHERE trip_id = ?`
-  ).all(tripId) as { participant_id: number; weight: number; attended: number }[];
-
-  const attended = rows.filter(r => r.attended);
-  const N = attended.length;
-  if (N === 0) return {};
-
-  // Сортируем по весу убыванием для определения места
-  const sorted = [...attended].sort((a, b) => b.weight - a.weight);
-  const scores: Record<number, number> = {};
-  sorted.forEach((r, i) => {
-    // место = i+1, балл по формуле
-    const place = i + 1;
-    scores[r.participant_id] = Math.round(((N - place + 1) / N) * 10 * 100) / 100;
-  });
-  // неявившиеся = 0
-  rows.filter(r => !r.attended).forEach(r => { scores[r.participant_id] = 0; });
-  return scores;
-}
+// Формула: балл за выезд = (N - место + 1) / N * 100
+// где N = число участников на выезде (присутствовавших)
+// Нормировка итогового рейтинга: рейтинг = промбалл / макс * 100
+// Личное достижение (Крупненькая сезона) = 100 баллов
 
 export const storage = {
   // --- Participants ---
@@ -218,12 +199,11 @@ export const storage = {
     const allResults = db.prepare('SELECT * FROM results').all() as Result[];
     const allAchievements = db.prepare('SELECT * FROM achievements').all() as Achievement[];
 
-    // Текущий клубный год (второе воскресенье сентября)
+    // Текущий клубный год (со второго воскресенья сентября)
     const now = new Date();
     function getClubYearStart(year: number): Date {
-      // Второе воскресенье сентября
       const sep1 = new Date(year, 8, 1);
-      const dow = sep1.getDay(); // 0=Sun
+      const dow = sep1.getDay();
       const firstSun = dow === 0 ? sep1 : new Date(year, 8, 1 + (7 - dow));
       return new Date(year, 8, firstSun.getDate() + 7);
     }
@@ -238,7 +218,7 @@ export const storage = {
     });
     const seasonTripIds = new Set(seasonTrips.map(t => t.id));
 
-    // Для каждого выезда считаем баллы
+    // Для каждого выезда считаем баллы: (N - место + 1) / N * 100
     const tripScoresMap: Record<number, Record<number, number>> = {};
     for (const trip of seasonTrips) {
       const rows = allResults.filter(r => r.trip_id === trip.id && r.attended);
@@ -246,41 +226,69 @@ export const storage = {
       if (N === 0) continue;
       const sorted = [...rows].sort((a, b) => b.weight - a.weight);
       tripScoresMap[trip.id] = {};
-      sorted.forEach((r, i) => {
-        tripScoresMap[trip.id][r.participant_id] = Math.round(((N - i) / N) * 10 * 100) / 100;
-      });
+      // Обработка одинаковых весов (одинаковые места)
+      let i = 0;
+      while (i < sorted.length) {
+        let j = i;
+        while (j < sorted.length && sorted[j].weight === sorted[i].weight) j++;
+        // все от i до j-1 имеют одинаковый вес — усредняем баллы
+        let sumScores = 0;
+        for (let k = i; k < j; k++) {
+          const place = k + 1;
+          sumScores += (N - place + 1) / N * 100;
+        }
+        const avgScore = Math.round((sumScores / (j - i)) * 100) / 100;
+        for (let k = i; k < j; k++) {
+          tripScoresMap[trip.id][sorted[k].participant_id] = avgScore;
+        }
+        i = j;
+      }
     }
 
-    // Для каждого участника
-    return participants.map(p => {
+    // Промежуточный балл каждого участника
+    const entries = participants.map(p => {
       const seasonResults = allResults.filter(r => r.participant_id === p.id && seasonTripIds.has(r.trip_id));
       const seasonAchievements = allAchievements.filter(a => a.participant_id === p.id && a.year === currentSeason);
 
-      // Промежуточный балл = сумма баллов за выезды + баллы за достижения
+      // Сумма баллов за выезды
       let tripScore = 0;
-      let tripsWithScore = 0;
+      let tripsAttended = 0;
       for (const res of seasonResults) {
-        if (res.attended && tripScoresMap[res.trip_id]) {
-          const s = tripScoresMap[res.trip_id][p.id] || 0;
-          tripScore += s;
-          if (s > 0) tripsWithScore++;
+        if (res.attended) {
+          tripsAttended++;
+          if (tripScoresMap[res.trip_id]) {
+            tripScore += tripScoresMap[res.trip_id][p.id] || 0;
+          }
         }
       }
 
-      // Личные достижения: 5 баллов за каждое
-      const achScore = seasonAchievements.length * 5;
+      // Личные достижения: 100 баллов за каждое (Крупненькая сезона)
+      const achScore = seasonAchievements.length * 100;
       const intermediate = Math.round((tripScore + achScore) * 100) / 100;
 
       return {
         participant: p,
         intermediate,
-        tripsWithScore,
+        tripsAttended,
         achievementsCount: seasonAchievements.length,
         achievements: seasonAchievements,
         results: seasonResults,
-        place: 0 // будет проставлено ниже
+        place: 0,
+        rating: 0
       };
-    }).sort((a, b) => b.intermediate - a.intermediate).map((entry, idx) => ({ ...entry, place: idx + 1 }));
+    });
+
+    // Нормировка: рейтинг = intermediate / max * 100
+    const maxIntermediate = Math.max(...entries.map(e => e.intermediate), 1);
+    const sorted = entries
+      .map(e => ({
+        ...e,
+        rating: Math.round((e.intermediate / maxIntermediate) * 100 * 10) / 10
+      }))
+      .sort((a, b) => b.intermediate - a.intermediate)
+      .map((entry, idx) => ({ ...entry, place: idx + 1 }));
+
+    return sorted;
   }
 };
 
