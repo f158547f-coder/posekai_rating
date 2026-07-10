@@ -285,7 +285,7 @@ export function registerRoutes(app: Express): void {
       [16,1,0,1,0,'мормышка'],
     ];
     for (const [pi,ti,w,att,big,tack] of results) {
-      if (att) storage.upsertResult(pIds[pi], tIds[ti], w, att, big, tack);
+      if (att) storage.setResult(pIds[pi], tIds[ti], w, att, big, tack);
     }
     // Achievements
     storage.addAchievement(pIds[1], 'Крупненькая', 2026, 'Крупненькая: Карп 2026');
