@@ -7,7 +7,7 @@
     "server": "tsx watch server/index.ts",
     "client": "vite",
     "build": "vite build",
-    "start": "npm run build && tsx server/index.ts"
+    "start": "tsx server/index.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.56.2",
