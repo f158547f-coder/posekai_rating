@@ -5,7 +5,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'podsekai2024';
 const tokens = new Set<string>();
 
 function requireAuth(req: Request, res: Response): boolean {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const token = req.headers['x-admin-token'] as string || req.headers.authorization?.replace('Bearer ', '');
   if (!token || !tokens.has(token)) {
     res.status(401).json({ error: 'Unauthorized' });
     return false;
@@ -15,50 +15,44 @@ function requireAuth(req: Request, res: Response): boolean {
 
 export function registerRoutes(app: Express): void {
   // Auth
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/admin/login', (req, res) => {
     const { password } = req.body;
     if (password === ADMIN_PASSWORD) {
       const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
       tokens.add(token);
-      res.json({ token });
+      res.json({ ok: true, token });
     } else {
-      res.status(401).json({ error: 'Invalid password' });
+      res.status(401).json({ error: 'Неверный пароль' });
     }
   });
 
-  app.post('/api/auth/logout', (req, res) => {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+  app.post('/api/admin/logout', (req, res) => {
+    const token = req.headers['x-admin-token'] as string || req.headers.authorization?.replace('Bearer ', '');
     if (token) tokens.delete(token);
     res.json({ ok: true });
   });
 
   // Rating
   app.get('/api/rating', (_req, res) => {
-    res.json(storage.getRating());
+    try { res.json(storage.getRating()); }
+    catch(e) { res.status(500).json({ error: String(e) }); }
   });
 
-  // Members
-  app.get('/api/members', (_req, res) => {
-    res.json(storage.getMembers());
+  // Participants
+  app.get('/api/participants', (_req, res) => {
+    res.json(storage.getParticipants());
   });
 
-  app.post('/api/members', (req, res) => {
+  app.post('/api/participants', (req, res) => {
     if (!requireAuth(req, res)) return;
-    const { name, photo } = req.body;
-    if (!name) return res.status(400).json({ error: 'Name required' }) as any;
-    res.json(storage.addMember(name, photo || ''));
+    const { name } = req.body;
+    if (!name) return void res.status(400).json({ error: 'name required' });
+    res.json(storage.addParticipant(name));
   });
 
-  app.put('/api/members/:id', (req, res) => {
+  app.delete('/api/participants/:id', (req, res) => {
     if (!requireAuth(req, res)) return;
-    const { name, photo } = req.body;
-    storage.updateMember(parseInt(req.params.id), name, photo || '');
-    res.json({ ok: true });
-  });
-
-  app.delete('/api/members/:id', (req, res) => {
-    if (!requireAuth(req, res)) return;
-    storage.deleteMember(parseInt(req.params.id));
+    storage.deleteParticipant(parseInt(req.params.id));
     res.json({ ok: true });
   });
 
@@ -69,16 +63,9 @@ export function registerRoutes(app: Express): void {
 
   app.post('/api/trips', (req, res) => {
     if (!requireAuth(req, res)) return;
-    const { date, description } = req.body;
-    if (!date) return res.status(400).json({ error: 'Date required' }) as any;
-    res.json(storage.addTrip(date, description || ''));
-  });
-
-  app.put('/api/trips/:id', (req, res) => {
-    if (!requireAuth(req, res)) return;
-    const { date, description } = req.body;
-    storage.updateTrip(parseInt(req.params.id), date, description || '');
-    res.json({ ok: true });
+    const { name, date, location, discipline } = req.body;
+    if (!date) return void res.status(400).json({ error: 'date required' });
+    res.json(storage.addTrip(name || `Выезд ${date}`, date, location || '', discipline || 'fishing'));
   });
 
   app.delete('/api/trips/:id', (req, res) => {
@@ -87,16 +74,60 @@ export function registerRoutes(app: Express): void {
     res.json({ ok: true });
   });
 
-  // Catches
-  app.get('/api/catches', (req, res) => {
+  // Results
+  app.get('/api/results', (req, res) => {
     const tripId = req.query.trip_id ? parseInt(req.query.trip_id as string) : undefined;
-    res.json(storage.getCatches(tripId));
+    if (tripId) res.json(storage.getResultsByTrip(tripId));
+    else res.json(storage.getResults());
   });
 
-  app.post('/api/catches', (req, res) => {
+  app.post('/api/results', (req, res) => {
     if (!requireAuth(req, res)) return;
-    const { member_id, trip_id, weight, count, biggest, personal_achievement } = req.body;
-    storage.setCatch(member_id, trip_id, weight || 0, count || 0, biggest || 0, personal_achievement || 0);
+    const { participant_id, trip_id, weight, attended, is_biggest, tackle } = req.body;
+    if (!participant_id || !trip_id) return void res.status(400).json({ error: 'participant_id and trip_id required' });
+    storage.setResult(participant_id, trip_id, weight || 0, attended ?? 1, is_biggest || 0, tackle || '');
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/results/:id', (req, res) => {
+    if (!requireAuth(req, res)) return;
+    storage.deleteResult(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Achievements
+  app.get('/api/achievements', (_req, res) => {
+    res.json(storage.getAchievements());
+  });
+
+  app.post('/api/achievements', (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const { participant_id, category, year, name } = req.body;
+    if (!participant_id || !category || !year || !name) return void res.status(400).json({ error: 'fields required' });
+    res.json(storage.addAchievement(participant_id, category, parseInt(year), name));
+  });
+
+  app.delete('/api/achievements/:id', (req, res) => {
+    if (!requireAuth(req, res)) return;
+    storage.deleteAchievement(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // BigFish
+  app.get('/api/bigfish', (_req, res) => {
+    res.json(storage.getBigfish());
+  });
+
+  app.post('/api/bigfish', (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const { participant_id, fish, weight, season, date, location, tackle } = req.body;
+    if (!participant_id || !fish || !weight || !season || !date) return void res.status(400).json({ error: 'fields required' });
+    res.json(storage.addBigfish(participant_id, fish, weight, parseInt(season), date, location || '', tackle || ''));
+  });
+
+  app.delete('/api/bigfish/:id', (req, res) => {
+    if (!requireAuth(req, res)) return;
+    storage.deleteBigfish(parseInt(req.params.id));
     res.json({ ok: true });
   });
 }

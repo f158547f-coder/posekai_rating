@@ -3,7 +3,8 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "tsx server/index.ts",    "healthcheckPath": "/api/health",
+    "startCommand": "npm run start",
+    "healthcheckPath": "/api/health",
     "restartPolicyType": "ON_FAILURE"
   }
 }
