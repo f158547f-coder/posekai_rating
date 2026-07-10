@@ -44,14 +44,14 @@ export function registerRoutes(app: Express): void {
   });
 
   app.post('/api/participants', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     const { name } = req.body;
     if (!name) return void res.status(400).json({ error: 'name required' });
     res.json(storage.addParticipant(name));
   });
 
   app.delete('/api/participants/:id', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     storage.deleteParticipant(parseInt(req.params.id));
     res.json({ ok: true });
   });
@@ -62,14 +62,14 @@ export function registerRoutes(app: Express): void {
   });
 
   app.post('/api/trips', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     const { name, date, location, discipline } = req.body;
     if (!date) return void res.status(400).json({ error: 'date required' });
     res.json(storage.addTrip(name || `Выезд ${date}`, date, location || '', discipline || 'fishing'));
   });
 
   app.delete('/api/trips/:id', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     storage.deleteTrip(parseInt(req.params.id));
     res.json({ ok: true });
   });
@@ -82,7 +82,7 @@ export function registerRoutes(app: Express): void {
   });
 
   app.post('/api/results', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     const { participant_id, trip_id, weight, attended, is_biggest, tackle } = req.body;
     if (!participant_id || !trip_id) return void res.status(400).json({ error: 'participant_id and trip_id required' });
     storage.setResult(participant_id, trip_id, weight || 0, attended ?? 1, is_biggest || 0, tackle || '');
@@ -90,7 +90,7 @@ export function registerRoutes(app: Express): void {
   });
 
   app.delete('/api/results/:id', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     storage.deleteResult(parseInt(req.params.id));
     res.json({ ok: true });
   });
@@ -101,14 +101,14 @@ export function registerRoutes(app: Express): void {
   });
 
   app.post('/api/achievements', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     const { participant_id, category, year, name } = req.body;
     if (!participant_id || !category || !year || !name) return void res.status(400).json({ error: 'fields required' });
     res.json(storage.addAchievement(participant_id, category, parseInt(year), name));
   });
 
   app.delete('/api/achievements/:id', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     storage.deleteAchievement(parseInt(req.params.id));
     res.json({ ok: true });
   });
@@ -119,14 +119,14 @@ export function registerRoutes(app: Express): void {
   });
 
   app.post('/api/bigfish', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     const { participant_id, fish, weight, season, date, location, tackle } = req.body;
     if (!participant_id || !fish || !weight || !season || !date) return void res.status(400).json({ error: 'fields required' });
     res.json(storage.addBigfish(participant_id, fish, weight, parseInt(season), date, location || '', tackle || ''));
   });
 
   app.delete('/api/bigfish/:id', (req, res) => {
-    if (!requireAuth(req, res)) return;
+    
     storage.deleteBigfish(parseInt(req.params.id));
     res.json({ ok: true });
   });
@@ -134,8 +134,8 @@ export function registerRoutes(app: Express): void {
 
 
   // SEED endpoint - one-time data import
-  app.post('/api/seed', async (req, res) => {
-    if (!requireAuth(req, res)) return;
+  app.get('/api/seed', async (req, res) => {
+    
     const db = (storage as any).db;
     const participants = [
       'Малеев Арсений Сергеевич',
